@@ -1,16 +1,19 @@
 package httpx
 
 import (
-	"io"
-	"net/http"
-	"strings"
-	"sync/atomic"
-
+	"errors"
+	"github.com/go-playground/locales/zh"
+	ut "github.com/go-playground/universal-translator"
+	"github.com/go-playground/validator/v10"
+	zh_translations "github.com/go-playground/validator/v10/translations/zh"
+	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/core/mapping"
-	"github.com/zeromicro/go-zero/core/validation"
 	"github.com/zeromicro/go-zero/rest/internal/encoding"
 	"github.com/zeromicro/go-zero/rest/internal/header"
 	"github.com/zeromicro/go-zero/rest/pathvar"
+	"io"
+	"net/http"
+	"strings"
 )
 
 const (
@@ -25,17 +28,48 @@ const (
 var (
 	formUnmarshaler = mapping.NewUnmarshaler(formKey, mapping.WithStringValues())
 	pathUnmarshaler = mapping.NewUnmarshaler(pathKey, mapping.WithStringValues())
-	validator       atomic.Value
+
+	xValidator = NewValidator()
 )
 
-// Validator defines the interface for validating the request.
-type Validator interface {
-	// Validate validates the request and parsed data.
-	Validate(r *http.Request, data any) error
+type Validator struct {
+	Validator *validator.Validate
+	Uni       *ut.UniversalTranslator
+	Trans     ut.Translator
+}
+
+func NewValidator() *Validator {
+	v := Validator{}
+	zh := zh.New()
+	v.Uni = ut.New(zh)
+	v.Validator = validator.New()
+	v.Trans, _ = v.Uni.GetTranslator("zh")
+	err := zh_translations.RegisterDefaultTranslations(v.Validator, v.Trans)
+	if err != nil {
+		logx.Errorf("校验翻译器注册失败: %s", err.Error())
+		return nil
+	}
+	return &v
+}
+
+func (v *Validator) Validate(data any) string {
+	if err := v.Validator.Struct(data); err != nil {
+		if errs, ok := err.(validator.ValidationErrors); ok {
+			result := errs.Translate(v.Trans)
+			for _, value := range result {
+				return value
+			}
+		}
+		invalid, ok := err.(*validator.InvalidValidationError)
+		if ok {
+			return invalid.Error()
+		}
+	}
+	return ""
 }
 
 // Parse parses the request.
-func Parse(r *http.Request, v any) error {
+func Parse(r *http.Request, v any, isValidate bool) error {
 	if err := ParsePath(r, v); err != nil {
 		return err
 	}
@@ -51,11 +85,10 @@ func Parse(r *http.Request, v any) error {
 	if err := ParseJsonBody(r, v); err != nil {
 		return err
 	}
-
-	if valid, ok := v.(validation.Validator); ok {
-		return valid.Validate()
-	} else if val := validator.Load(); val != nil {
-		return val.(Validator).Validate(r, v)
+	if isValidate {
+		if errMsg := xValidator.Validate(v); errMsg != "" {
+			return errors.New(errMsg)
+		}
 	}
 
 	return nil
@@ -118,13 +151,6 @@ func ParsePath(r *http.Request, v any) error {
 	}
 
 	return pathUnmarshaler.Unmarshal(m, v)
-}
-
-// SetValidator sets the validator.
-// The validator is used to validate the request, only called in Parse,
-// not in ParseHeaders, ParseForm, ParseHeader, ParseJsonBody, ParsePath.
-func SetValidator(val Validator) {
-	validator.Store(val)
 }
 
 func withJsonBody(r *http.Request) bool {
