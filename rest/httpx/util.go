@@ -1,6 +1,15 @@
 package httpx
 
-import "net/http"
+import (
+	"context"
+	"github.com/go-playground/locales/zh"
+	ut "github.com/go-playground/universal-translator"
+	"github.com/go-playground/validator/v10"
+	zh_translations "github.com/go-playground/validator/v10/translations/zh"
+	"github.com/zeromicro/go-zero/core/logx"
+	"net/http"
+	"reflect"
+)
 
 const xForwardedFor = "X-Forwarded-For"
 
@@ -35,4 +44,50 @@ func GetRemoteAddr(r *http.Request) string {
 	}
 
 	return r.RemoteAddr
+}
+
+type Validator struct {
+	Validator *validator.Validate
+	Uni       *ut.UniversalTranslator
+	Trans     ut.Translator
+}
+
+func NewValidator() *Validator {
+	v := Validator{}
+	zh := zh.New()
+	v.Uni = ut.New(zh)
+	v.Validator = validator.New()
+	v.Trans, _ = v.Uni.GetTranslator("zh")
+	err := zh_translations.RegisterDefaultTranslations(v.Validator, v.Trans)
+	if err != nil {
+		logx.Errorf("校验翻译器注册失败: %s", err.Error())
+		return nil
+	}
+	return &v
+}
+
+func (v *Validator) Validate(context context.Context, data any) string {
+	if err := v.Validator.StructCtx(context, data); err != nil {
+		r := reflect.TypeOf(data).Elem()
+		if errs, ok := err.(validator.ValidationErrors); ok {
+
+			if field, ok := r.FieldByName(errs[0].StructField()); ok {
+				msg := field.Tag.Get("msg")
+				label := field.Tag.Get("label")
+
+				if label == "" {
+					label = errs[0].StructField()
+				}
+				if msg == "" {
+					msg = errs[0].Translate(v.Trans)[len(label):]
+				}
+				return label + msg
+			}
+		}
+		invalid, ok := err.(*validator.InvalidValidationError)
+		if ok {
+			return invalid.Error()
+		}
+	}
+	return ""
 }

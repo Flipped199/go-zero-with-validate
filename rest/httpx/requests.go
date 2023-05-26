@@ -2,11 +2,6 @@ package httpx
 
 import (
 	"errors"
-	"github.com/go-playground/locales/zh"
-	ut "github.com/go-playground/universal-translator"
-	"github.com/go-playground/validator/v10"
-	zh_translations "github.com/go-playground/validator/v10/translations/zh"
-	"github.com/zeromicro/go-zero/core/logx"
 	"github.com/zeromicro/go-zero/core/mapping"
 	"github.com/zeromicro/go-zero/rest/internal/encoding"
 	"github.com/zeromicro/go-zero/rest/internal/header"
@@ -32,42 +27,6 @@ var (
 	xValidator = NewValidator()
 )
 
-type Validator struct {
-	Validator *validator.Validate
-	Uni       *ut.UniversalTranslator
-	Trans     ut.Translator
-}
-
-func NewValidator() *Validator {
-	v := Validator{}
-	zh := zh.New()
-	v.Uni = ut.New(zh)
-	v.Validator = validator.New()
-	v.Trans, _ = v.Uni.GetTranslator("zh")
-	err := zh_translations.RegisterDefaultTranslations(v.Validator, v.Trans)
-	if err != nil {
-		logx.Errorf("校验翻译器注册失败: %s", err.Error())
-		return nil
-	}
-	return &v
-}
-
-func (v *Validator) Validate(data any) string {
-	if err := v.Validator.Struct(data); err != nil {
-		if errs, ok := err.(validator.ValidationErrors); ok {
-			result := errs.Translate(v.Trans)
-			for _, value := range result {
-				return value
-			}
-		}
-		invalid, ok := err.(*validator.InvalidValidationError)
-		if ok {
-			return invalid.Error()
-		}
-	}
-	return ""
-}
-
 // Parse parses the request.
 func Parse(r *http.Request, v any, isValidate bool) error {
 	if err := ParsePath(r, v); err != nil {
@@ -86,7 +45,7 @@ func Parse(r *http.Request, v any, isValidate bool) error {
 		return err
 	}
 	if isValidate {
-		if errMsg := xValidator.Validate(v); errMsg != "" {
+		if errMsg := xValidator.Validate(r.Context(), v); errMsg != "" {
 			return errors.New(errMsg)
 		}
 	}
