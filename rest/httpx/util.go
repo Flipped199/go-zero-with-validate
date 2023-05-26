@@ -79,7 +79,7 @@ func (v *Validator) Validate(context context.Context, data any) string {
 					label = errs[0].StructField()
 				}
 				if msg == "" {
-					msg = errs[0].Translate(v.Trans)[len(label):]
+					msg = errs[0].Translate(v.Trans)[len(errs[0].StructField()):]
 				}
 				return label + msg
 			}
