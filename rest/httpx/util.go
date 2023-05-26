@@ -52,6 +52,14 @@ type Validator struct {
 	Trans     ut.Translator
 }
 
+type ValidateError struct {
+	Msg string
+}
+
+func (v ValidateError) Error() string {
+	return v.Msg
+}
+
 func NewValidator() *Validator {
 	v := Validator{}
 	zh := zh.New()
@@ -66,7 +74,7 @@ func NewValidator() *Validator {
 	return &v
 }
 
-func (v *Validator) Validate(context context.Context, data any) string {
+func (v *Validator) Validate(context context.Context, data any) error {
 	if err := v.Validator.StructCtx(context, data); err != nil {
 		r := reflect.TypeOf(data).Elem()
 		if errs, ok := err.(validator.ValidationErrors); ok {
@@ -81,13 +89,13 @@ func (v *Validator) Validate(context context.Context, data any) string {
 				if msg == "" {
 					msg = errs[0].Translate(v.Trans)[len(errs[0].StructField()):]
 				}
-				return label + msg
+				return ValidateError{Msg: label + msg}
 			}
 		}
 		invalid, ok := err.(*validator.InvalidValidationError)
 		if ok {
-			return invalid.Error()
+			return invalid
 		}
 	}
-	return ""
+	return nil
 }

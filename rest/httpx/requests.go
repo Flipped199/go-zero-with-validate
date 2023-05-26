@@ -1,7 +1,6 @@
 package httpx
 
 import (
-	"errors"
 	"github.com/zeromicro/go-zero/core/mapping"
 	"github.com/zeromicro/go-zero/rest/internal/encoding"
 	"github.com/zeromicro/go-zero/rest/internal/header"
@@ -45,9 +44,7 @@ func Parse(r *http.Request, v any, isValidate bool) error {
 		return err
 	}
 	if isValidate {
-		if errMsg := xValidator.Validate(r.Context(), v); errMsg != "" {
-			return errors.New(errMsg)
-		}
+		return xValidator.Validate(r.Context(), v)
 	}
 
 	return nil
